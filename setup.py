@@ -13,7 +13,7 @@ requires = [
 entry_points = ''
 
 setup(
-    name='landsat_ee_downloader',
+    name='ee_downloader',
     version=version,
     description="",
     long_description="",
