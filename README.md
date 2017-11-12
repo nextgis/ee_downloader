@@ -1,1 +1,1 @@
-# landsat_ee_downloader
+# ee_downloader
