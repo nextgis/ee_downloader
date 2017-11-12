@@ -18,23 +18,36 @@ import credentials as creds
 URL = 'https://earthexplorer.usgs.gov'
 AUTH_URL = 'https://ers.cr.usgs.gov/login/'
 
-PRODUCT = 'Landsat 8 OLI/TIRS C1 Level-1'
+PRODUCT = 'Sentinel-2'
 PRODUCTS = {
     'Landsat 8 OLI/TIRS C1 Level-1': {
         'id': 12864,
         'field_identifier_ids': ['text_20520_1', 'text_20520_2', 'text_20520_3', 'text_20520_4'],
         'select_ids': ['select_20522_5', 'select_20515_5', 'select_20510_4', 'select_20517_4',
-                       'select_20518_4', 'select_20513_3', 'select_20519_3']
+                       'select_20518_4', 'select_20513_3', 'select_20519_3'],
+        'scene_identifier_key': 'Landsat Product Identifier'
+    },
+    'Sentinel-2': {
+        'id': 10880,
+        'field_identifier_ids': ['text_18698_1', 'text_18698_2', 'text_18698_3', 'text_18698_4'],
+        'select_ids': ['select_18696_5', 'select_18697_3'],
+        'scene_identifier_key': 'Entity ID'
     }
 }
 
-FORMAT = 'Level-1 GeoTIFF Data Product'  # 'LandsatLook Quality Image'
+FORMAT = 'L1C Tile in JPEG2000 format'
 FORMATS = {
     'LandsatLook Quality Image': {
         'extension': '.jpg'
     },
     'Level-1 GeoTIFF Data Product': {
         'extension': '.tar.gz'
+    },
+    'Full Resolution Browse in GeoTIFF format': {
+        'extension': '.tif'
+    },
+    'L1C Tile in JPEG2000 format': {
+        'extension': '.zip'
     }
 }
 
@@ -151,10 +164,10 @@ def download_scene(scene, login, password, result_dir, tmp_parent_path):
     :param result_dir:  directory for store the scene archive
     :return:    path to the archive or None if an error occurs
     """
-    id_key = u'Landsat Product Identifier'
-    # Skip download if file exists
+    scene_identifier_key = PRODUCTS[PRODUCT]['scene_identifier_key']
+    scene_id = scene[scene_identifier_key]
     filename = os.path.join(result_dir,
-                            '{name}{extension}'.format(name=scene[id_key], extension=FORMATS[FORMAT]['extension']))
+                            '{name}{extension}'.format(name=scene_id, extension=FORMATS[FORMAT]['extension']))
     if os.path.isfile(filename):
         return filename
 
@@ -163,7 +176,7 @@ def download_scene(scene, login, password, result_dir, tmp_parent_path):
     if data_format_keys:
         data_format_key = data_format_keys[0]
     else:
-        print 'Format "{format}" is unavailable for scene "{scene_id}"'.format(format=FORMAT, scene_id=scene[id_key])
+        print 'Format "{format}" is unavailable for scene "{scene_id}"'.format(format=FORMAT, scene_id=scene_id)
         return None
 
     if scene[data_format_key]:
@@ -172,14 +185,14 @@ def download_scene(scene, login, password, result_dir, tmp_parent_path):
         try:
             _download_file(login, password, download_url, tmp_scene_file)
         except Exception:
-            print 'ERROR: Failed download "{format}" for scene "{scene_id}"'.format(format=FORMAT, scene_id=scene['id'])
+            print 'ERROR: Failed download "{format}" for scene "{scene_id}"'.format(format=FORMAT, scene_id=scene_id)
             return None
         finally:
             if os.path.isfile(tmp_scene_file):
                 shutil.move(tmp_scene_file, filename)
             print 'File "{file_name}" is downloaded'.format(file_name=filename)
     else:
-        print 'ERROR: No url for "{format}" for scene "{scene_id}"'.format(format=FORMAT, scene_id=scene['id'])
+        print 'ERROR: No url for "{format}" for scene "{scene_id}"'.format(format=FORMAT, scene_id=scene_id)
         return None
 
     if FORMAT == 'Level-1 GeoTIFF Data Product':
@@ -257,12 +270,11 @@ def _download_file(login, password, url, filename):
 if __name__ == "__main__":
     login = creds.login
     password = creds.password
-    scenes = get_scenes(login=login, password=password, identifiers=['LC08_L1GT_156119_20170207_20170216_01_T2']),
-                                                                     # 'LC08_L1GT_156120_20170207_20170216_01_T2',
-                                                                     # 'LC08_L1TP_003056_20170207_20170216_01_T1'])
+    scenes = get_scenes(login=login, password=password, identifiers=['L1C_T17UMS_A012478_20171111T162517']),
+    # 'LC08_L1GT_156120_20170207_20170216_01_T2',
+    # 'LC08_L1TP_003056_20170207_20170216_01_T1'])
 
     for s in scenes:
-        # print s['id']
         print s
         print s[0].keys()
         download_scene(s[0], login, password, '/tmp/', '/tmp')
