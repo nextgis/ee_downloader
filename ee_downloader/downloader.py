@@ -14,53 +14,16 @@ from bs4 import BeautifulSoup
 
 from utils import check_archive_fast, silent_remove
 import credentials as creds
-
-URL = 'https://earthexplorer.usgs.gov'
-AUTH_URL = 'https://ers.cr.usgs.gov/login/'
-
-PRODUCT = 'Sentinel-2'
-PRODUCTS = {
-    'Landsat 8 OLI/TIRS C1 Level-1': {
-        'id': 12864,
-        'field_identifier_ids': ['text_20520_1', 'text_20520_2', 'text_20520_3', 'text_20520_4'],
-        'select_ids': ['select_20522_5', 'select_20515_5', 'select_20510_4', 'select_20517_4',
-                       'select_20518_4', 'select_20513_3', 'select_20519_3'],
-        'scene_identifier_key': 'Landsat Product Identifier'
-    },
-    'Sentinel-2': {
-        'id': 10880,
-        'field_identifier_ids': ['text_18698_1', 'text_18698_2', 'text_18698_3', 'text_18698_4'],
-        'select_ids': ['select_18696_5', 'select_18697_3'],
-        'scene_identifier_key': 'Entity ID'
-    }
-}
-
-FORMAT = 'L1C Tile in JPEG2000 format'
-FORMATS = {
-    'LandsatLook Quality Image': {
-        'extension': '.jpg'
-    },
-    'Level-1 GeoTIFF Data Product': {
-        'extension': '.tar.gz'
-    },
-    'Full Resolution Browse in GeoTIFF format': {
-        'extension': '.tif'
-    },
-    'L1C Tile in JPEG2000 format': {
-        'extension': '.zip'
-    }
-}
-
-MAX_SCENE_COUNT = 25000
+import config as downloader_config
 
 
 def get_session_id(s, login, password):
-    response = s.get(AUTH_URL)
+    response = s.get(downloader_config.AUTH_URL)
     match = re.search(r'value="(.*?)" id="csrf_token"', response.content)
     csrf_token = match.group(1)
 
     payload = {'username': login, 'password': password, 'csrf_token': csrf_token}
-    response = s.post(AUTH_URL, data=payload, allow_redirects=False)
+    response = s.post(downloader_config.AUTH_URL, data=payload, allow_redirects=False)
 
     if response.status_code != 302:
         raise RuntimeError('Authentication Failed')
@@ -76,12 +39,12 @@ def set_empty_filter(session):
         'dEnd': '',
         'searchType': 'Std',
         'includeUnknownCC': 1,
-        'num': str(MAX_SCENE_COUNT),
+        'num': str(downloader_config.MAX_SCENE_COUNT),
         'months': ['', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'],
         'pType': 'polygon'
     }
 
-    _ = session.post(URL + '/tabs/save', data={'data': json.dumps(payload)})
+    _ = session.post(downloader_config.EE_URL + '/tabs/save', data={'data': json.dumps(payload)})
 
 
 def set_dataset(session, dataset_id):
@@ -92,14 +55,14 @@ def set_dataset(session, dataset_id):
         'selected': dataset_id
     }
 
-    _ = session.post(URL + '/tabs/save', data={'data': json.dumps(payload)})
+    _ = session.post(downloader_config.EE_URL + '/tabs/save', data={'data': json.dumps(payload)})
 
 
 def set_dataset_additional_criteria(session, dataset_id, identifiers):
     if not identifiers:
         identifiers = []
 
-    field_identifier_ids = PRODUCTS[PRODUCT]['field_identifier_ids']
+    field_identifier_ids = downloader_config.PRODUCTS[downloader_config.PRODUCT]['field_identifier_ids']
 
     if len(identifiers) > len(field_identifier_ids):
         raise Exception('Count of identifiers is to many. Max count of identifiers is {0}'
@@ -109,7 +72,8 @@ def set_dataset_additional_criteria(session, dataset_id, identifiers):
     for i, identifier in enumerate(identifiers):
         filter_by_identifiers[field_identifier_ids[i]] = identifier
 
-    filter_by_selects = {select_id: [''] for select_id in PRODUCTS[PRODUCT]['select_ids']}
+    filter_by_selects = {select_id: [''] for select_id in
+                         downloader_config.PRODUCTS[downloader_config.PRODUCT]['select_ids']}
 
     filters = dict(filter_by_identifiers.items() + filter_by_selects.items())
 
@@ -124,7 +88,7 @@ def set_dataset_additional_criteria(session, dataset_id, identifiers):
     params = dict()
     params["data"] = json.dumps(payload)
 
-    _ = session.post(URL + '/tabs/save', data=params)
+    _ = session.post(downloader_config.EE_URL + '/tabs/save', data=params)
 
 
 def fill_metadata(session, scene):
@@ -137,11 +101,11 @@ def fill_metadata(session, scene):
 
 
 def fill_download_options(session, scene):
-    product_id = str(PRODUCTS[PRODUCT]['id'])
+    product_id = str(downloader_config.PRODUCTS[downloader_config.PRODUCT]['id'])
     headers = {
         'X-Requested-With': 'XMLHttpRequest'
     }
-    req = session.get(URL + '/download/options/' + product_id + '/' + scene['id'], headers=headers)
+    req = session.get(downloader_config.EE_URL + '/download/options/' + product_id + '/' + scene['id'], headers=headers)
 
     soup = BeautifulSoup(req.text, 'html.parser')
     for input in soup.find_all('input'):
@@ -164,38 +128,43 @@ def download_scene(scene, login, password, result_dir, tmp_parent_path):
     :param result_dir:  directory for store the scene archive
     :return:    path to the archive or None if an error occurs
     """
-    scene_identifier_key = PRODUCTS[PRODUCT]['scene_identifier_key']
+    scene_identifier_key = downloader_config.PRODUCTS[downloader_config.PRODUCT]['scene_identifier_key']
     scene_id = scene[scene_identifier_key]
     filename = os.path.join(result_dir,
-                            '{name}{extension}'.format(name=scene_id, extension=FORMATS[FORMAT]['extension']))
+                            '{name}{extension}'.format(name=scene_id,
+                                                       extension=downloader_config.FORMATS[downloader_config.FORMAT]['extension']))
     if os.path.isfile(filename):
         return filename
 
-    data_format_keys = [key for key in scene.keys() if FORMAT in key]
+    data_format_keys = [key for key in scene.keys() if downloader_config.FORMAT in key]
 
     if data_format_keys:
         data_format_key = data_format_keys[0]
     else:
-        print 'Format "{format}" is unavailable for scene "{scene_id}"'.format(format=FORMAT, scene_id=scene_id)
+        print 'Format "{format}" is unavailable for scene "{scene_id}"'.format(format=downloader_config.FORMAT,
+                                                                               scene_id=scene_id)
         return None
 
     if scene[data_format_key]:
         download_url = scene[data_format_key]
-        tmp_scene_file = tempfile.mktemp(dir=tmp_parent_path) + FORMATS[FORMAT]['extension']
+        tmp_scene_file = tempfile.mktemp(dir=tmp_parent_path) + \
+                         downloader_config.FORMATS[downloader_config.FORMAT]['extension']
         try:
             _download_file(login, password, download_url, tmp_scene_file)
         except Exception:
-            print 'ERROR: Failed download "{format}" for scene "{scene_id}"'.format(format=FORMAT, scene_id=scene_id)
+            print 'ERROR: Failed download "{format}" for scene "{scene_id}"'\
+                .format(format=downloader_config.FORMAT, scene_id=scene_id)
             return None
         finally:
             if os.path.isfile(tmp_scene_file):
                 shutil.move(tmp_scene_file, filename)
             print 'File "{file_name}" is downloaded'.format(file_name=filename)
     else:
-        print 'ERROR: No url for "{format}" for scene "{scene_id}"'.format(format=FORMAT, scene_id=scene_id)
+        print 'ERROR: No url for "{format}" for scene "{scene_id}"'\
+            .format(format=downloader_config.FORMAT, scene_id=scene_id)
         return None
 
-    if FORMAT == 'Level-1 GeoTIFF Data Product':
+    if downloader_config.FORMAT == 'Level-1 GeoTIFF Data Product':
         if check_archive_fast(filename):
             scene['downloaded'] = True
             print 'File "{file_name}" is checked successfully'.format(file_name=filename)
@@ -207,7 +176,7 @@ def download_scene(scene, login, password, result_dir, tmp_parent_path):
 
 
 def get_scenes(login, password, identifiers):
-    product_id = str(PRODUCTS[PRODUCT]['id'])
+    product_id = str(downloader_config.PRODUCTS[downloader_config.PRODUCT]['id'])
 
     session = requests.session()
     get_session_id(session, login, password)
@@ -216,7 +185,7 @@ def get_scenes(login, password, identifiers):
     set_dataset_additional_criteria(session, product_id, identifiers)
 
     req = session.get('{url}/result/count?collection_id={product_id}&_={time}'
-                      .format(url=URL, product_id=product_id, time=str(int(time.time() * 1000))))
+                      .format(url=downloader_config.EE_URL, product_id=product_id, time=str(int(time.time() * 1000))))
     dictionary = req.json()
 
     scenes_count = int(dictionary.get('collectionCount'))
@@ -224,18 +193,18 @@ def get_scenes(login, password, identifiers):
 
     if scenes_count == 0:
         return
-    elif scenes_count > MAX_SCENE_COUNT:
+    elif scenes_count > downloader_config.MAX_SCENE_COUNT:
         raise RuntimeError('Too mach scenes. Modify search criteria')
 
     headers = {
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'X-Requested-With': 'XMLHttpRequest',
-        'Referer': URL,
+        'Referer': downloader_config.EE_URL,
         'Pragma': 'no-cache',
         'Cache-Control': 'no-cache'
     }
 
-    req = session.post(URL + '/result/index', data='collectionId=' + product_id, headers=headers)
+    req = session.post(downloader_config.EE_URL + '/result/index', data='collectionId=' + product_id, headers=headers)
 
     soup = BeautifulSoup(req.text, 'html.parser')
 
@@ -247,7 +216,8 @@ def get_scenes(login, password, identifiers):
             scene = dict()
             scene['id'] = id[0]
             scene['preview'] = imgtag['src'].replace('/browse/thumbnails/', '/browse/')
-            scene['metadata'] = URL + '/form/metadatalookup/?collection_id=' + product_id + '&entity_id=' + scene['id']
+            scene['metadata'] = downloader_config.EE_URL + '/form/metadatalookup/?collection_id=' + \
+                                product_id + '&entity_id=' + scene['id']
             scene_list.append(scene)
 
     for scene in scene_list:
@@ -270,7 +240,8 @@ def _download_file(login, password, url, filename):
 if __name__ == "__main__":
     login = creds.login
     password = creds.password
-    scenes = get_scenes(login=login, password=password, identifiers=['L1C_T17UMS_A012478_20171111T162517']),
+    scenes = get_scenes(login=login, password=password,
+                        identifiers=['S2A_OPER_MSI_L1C_TL_SGS__20160716T080034_20160716T113445_A005566_T39UWB_N02_04_01']),
     # 'LC08_L1GT_156120_20170207_20170216_01_T2',
     # 'LC08_L1TP_003056_20170207_20170216_01_T1'])
 
