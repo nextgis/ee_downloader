@@ -2,7 +2,6 @@ EE_URL = 'https://earthexplorer.usgs.gov'
 AUTH_URL = 'https://ers.cr.usgs.gov/login/'
 MAX_SCENE_COUNT = 25000
 
-PRODUCT = 'Sentinel-2'
 PRODUCTS = {
     'Landsat 8 OLI/TIRS C1 Level-1': {
         'id': 12864,
@@ -19,7 +18,6 @@ PRODUCTS = {
     }
 }
 
-FORMAT = 'Full Resolution Browse in GeoTIFF format'
 FORMATS = {
     # For Landsat 8
     'LandsatLook Quality Image': {

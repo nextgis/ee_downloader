@@ -58,11 +58,11 @@ def set_dataset(session, dataset_id):
     _ = session.post(downloader_config.EE_URL + '/tabs/save', data={'data': json.dumps(payload)})
 
 
-def set_dataset_additional_criteria(session, dataset_id, identifiers):
+def set_dataset_additional_criteria(session, dataset_id, identifiers, product_name):
     if not identifiers:
         identifiers = []
 
-    field_identifier_ids = downloader_config.PRODUCTS[downloader_config.PRODUCT]['field_identifier_ids']
+    field_identifier_ids = downloader_config.PRODUCTS[product_name]['field_identifier_ids']
 
     if len(identifiers) > len(field_identifier_ids):
         raise Exception('Count of identifiers is to many. Max count of identifiers is {0}'
@@ -73,7 +73,7 @@ def set_dataset_additional_criteria(session, dataset_id, identifiers):
         filter_by_identifiers[field_identifier_ids[i]] = identifier
 
     filter_by_selects = {select_id: [''] for select_id in
-                         downloader_config.PRODUCTS[downloader_config.PRODUCT]['select_ids']}
+                         downloader_config.PRODUCTS[product_name]['select_ids']}
 
     filters = dict(filter_by_identifiers.items() + filter_by_selects.items())
 
@@ -100,8 +100,8 @@ def fill_metadata(session, scene):
             scene[tr.td.a.string] = tr.td.next_sibling.next_sibling.string
 
 
-def fill_download_options(session, scene):
-    product_id = str(downloader_config.PRODUCTS[downloader_config.PRODUCT]['id'])
+def fill_download_options(session, scene, product_name):
+    product_id = str(downloader_config.PRODUCTS[product_name]['id'])
     headers = {
         'X-Requested-With': 'XMLHttpRequest'
     }
@@ -118,7 +118,7 @@ def fill_download_options(session, scene):
             scene[unicode.strip(input.findNext('div').text)] = onclick
 
 
-def download_scene(scene, login, password, result_dir, tmp_parent_path):
+def download_scene(scene, login, password, result_dir, tmp_path, product_name, product_format):
     """
     Download Landsat Scene. Return result filename or None if the scene can't be downloaded.
 
@@ -126,45 +126,48 @@ def download_scene(scene, login, password, result_dir, tmp_parent_path):
     :param login:   login
     :param password:    password
     :param result_dir:  directory for store the scene archive
+    :param tmp_path:  temporary directory for store the scene archive
+    :param product_name:  name of the product from config (e.g. 'Landsat 8 OLI/TIRS C1 Level-1' or 'Sentinel-2')
     :return:    path to the archive or None if an error occurs
     """
-    scene_identifier_key = downloader_config.PRODUCTS[downloader_config.PRODUCT]['scene_identifier_key']
+    scene_identifier_key = downloader_config.PRODUCTS[product_name]['scene_identifier_key']
     scene_id = scene[scene_identifier_key]
     filename = os.path.join(result_dir,
                             '{name}{extension}'.format(name=scene_id,
-                                                       extension=downloader_config.FORMATS[downloader_config.FORMAT]['extension']))
+                                                       extension=downloader_config.FORMATS[product_format][
+                                                           'extension']))
     if os.path.isfile(filename):
         return filename
 
-    data_format_keys = [key for key in scene.keys() if downloader_config.FORMAT in key]
+    data_format_keys = [key for key in scene.keys() if product_format in key]
 
     if data_format_keys:
         data_format_key = data_format_keys[0]
     else:
-        print 'Format "{format}" is unavailable for scene "{scene_id}"'.format(format=downloader_config.FORMAT,
+        print 'Format "{format}" is unavailable for scene "{scene_id}"'.format(format=product_format,
                                                                                scene_id=scene_id)
         return None
 
     if scene[data_format_key]:
         download_url = scene[data_format_key]
-        tmp_scene_file = tempfile.mktemp(dir=tmp_parent_path) + \
-                         downloader_config.FORMATS[downloader_config.FORMAT]['extension']
+        tmp_scene_file = tempfile.mktemp(dir=tmp_path) + \
+                         downloader_config.FORMATS[product_format]['extension']
         try:
             _download_file(login, password, download_url, tmp_scene_file)
         except Exception:
-            print 'ERROR: Failed download "{format}" for scene "{scene_id}"'\
-                .format(format=downloader_config.FORMAT, scene_id=scene_id)
+            print 'ERROR: Failed download "{format}" for scene "{scene_id}"' \
+                .format(format=product_format, scene_id=scene_id)
             return None
         finally:
             if os.path.isfile(tmp_scene_file):
                 shutil.move(tmp_scene_file, filename)
             print 'File "{file_name}" is downloaded'.format(file_name=filename)
     else:
-        print 'ERROR: No url for "{format}" for scene "{scene_id}"'\
-            .format(format=downloader_config.FORMAT, scene_id=scene_id)
+        print 'ERROR: No url for "{format}" for scene "{scene_id}"' \
+            .format(format=product_format, scene_id=scene_id)
         return None
 
-    if downloader_config.FORMAT == 'Level-1 GeoTIFF Data Product':
+    if product_format == 'Level-1 GeoTIFF Data Product':
         if check_archive_fast(filename):
             scene['downloaded'] = True
             print 'File "{file_name}" is checked successfully'.format(file_name=filename)
@@ -175,14 +178,14 @@ def download_scene(scene, login, password, result_dir, tmp_parent_path):
             return None
 
 
-def get_scenes(login, password, identifiers):
-    product_id = str(downloader_config.PRODUCTS[downloader_config.PRODUCT]['id'])
+def get_scenes(login, password, identifiers, product_name):
+    product_id = str(downloader_config.PRODUCTS[product_name]['id'])
 
     session = requests.session()
     get_session_id(session, login, password)
     set_empty_filter(session)
     set_dataset(session, product_id)
-    set_dataset_additional_criteria(session, product_id, identifiers)
+    set_dataset_additional_criteria(session, product_id, identifiers, product_name)
 
     req = session.get('{url}/result/count?collection_id={product_id}&_={time}'
                       .format(url=downloader_config.EE_URL, product_id=product_id, time=str(int(time.time() * 1000))))
@@ -222,7 +225,7 @@ def get_scenes(login, password, identifiers):
 
     for scene in scene_list:
         fill_metadata(session, scene)
-        fill_download_options(session, scene)
+        fill_download_options(session, scene, product_name)
 
     return scene_list
 
@@ -237,15 +240,58 @@ def _download_file(login, password, url, filename):
                 f.write(chunk)
 
 
+def download_scenes_by_ids(login, password, identifiers, temp_dir, product_name, product_format, result_dir=None):
+    """
+    Download Scene by identifiers. Return result array of scenes info.
+
+    :param login:   login
+    :param password:    password
+    :param identifiers: array of scene identifiers
+    :param temp_dir:  temporary directory for store the scene archive
+    :param product_name:  name of the product from config (e.g. 'Landsat 8 OLI/TIRS C1 Level-1' or 'Sentinel-2')
+    :param product_format:  file format name from config (e.g. 'Level-1 GeoTIFF Data Product' or 'LandsatLook Quality Image')
+    :param result_dir:  directory for store the scene archive
+    :return:    array of scenes info
+    """
+    if not login:
+        raise ValueError('Login should be no empty')
+    if not password:
+        raise ValueError('Password should be no empty')
+    if product_name not in downloader_config.PRODUCTS:
+        raise ValueError('Product "{0}" is not defined into config.py'.format(product_name))
+    if product_format not in downloader_config.FORMATS:
+        raise ValueError('Format "{0}" is not defined into config.py'.format(product_format))
+    if not type(identifiers) is list:
+        raise ValueError('Identifiers should be a list')
+    if not identifiers:
+        raise ValueError('Identifiers should be no empty list')
+
+    current_result_dir = result_dir if result_dir else temp_dir
+
+    scenes_info = get_scenes(login=login, password=password, identifiers=identifiers, product_name=product_name)
+
+    for scene_info in scenes_info:
+        filename = download_scene(scene_info, login, password, current_result_dir, temp_dir, product_name,
+                                  product_format)
+        scene_info['file_name'] = filename
+        print scene_info
+
+    return scenes_info
+
+
 if __name__ == "__main__":
     login = creds.login
     password = creds.password
-    scenes = get_scenes(login=login, password=password,
-                        identifiers=['S2A_OPER_MSI_L1C_TL_SGS__20160716T080034_20160716T113445_A005566_T39UWB_N02_04_01']),
-    # 'LC08_L1GT_156120_20170207_20170216_01_T2',
-    # 'LC08_L1TP_003056_20170207_20170216_01_T1'])
+
+    product_name = 'Sentinel-2'
+    product_format = 'Full Resolution Browse in GeoTIFF format'
+
+    scenes = get_scenes(login=login,
+                        password=password,
+                        identifiers=[
+                            'S2A_OPER_MSI_L1C_TL_SGS__20160716T080034_20160716T113445_A005566_T39UWB_N02_04_01'],
+                        product_name=product_name)
 
     for s in scenes:
         print s
-        print s[0].keys()
-        download_scene(s[0], login, password, '/tmp/', '/tmp')
+        download_scene(s, login, password, '/tmp/', '/tmp', product_name, product_format)
