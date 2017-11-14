@@ -270,6 +270,9 @@ def download_scenes_by_ids(login, password, identifiers, temp_dir, product_name,
 
     scenes_info = get_scenes(login=login, password=password, identifiers=identifiers, product_name=product_name)
 
+    if scenes_info is None:
+        return []
+
     for scene_info in scenes_info:
         filename = download_scene(scene_info, login, password, current_result_dir, temp_dir, product_name,
                                   product_format)
