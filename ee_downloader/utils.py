@@ -12,6 +12,8 @@ from shapely.geometry import Polygon
 from shapely.geometry import mapping
 from shapely.geometry import box
 
+import config as downloader_config
+
 
 class CoordinateConverter():
     """
@@ -186,11 +188,17 @@ def zip(filename_list, arch_name):
     zf.close()
 
 
-def check_archive_fast(datafile):
+def check_archive_fast(datafile, product_format):
     # There isn't way to check tar arch without unpacking
     # http://stackoverflow.com/questions/1788236/how-to-determine-if-data-is-valid-tar-file-without-a-file
     # We'll perform fast check
-    return tarfile.is_tarfile(datafile)
+    if product_format not in downloader_config.FORMATS:
+        return False
+    if product_format == 'Level-1 GeoTIFF Data Product':
+        return tarfile.is_tarfile(datafile)
+    if product_format == 'L1C Tile in JPEG2000 format':
+        return zipfile.is_zipfile(datafile)
+    return True 
 
 
 def unpack(data_file, extract_dir):

@@ -167,16 +167,14 @@ def download_scene(scene, login, password, result_dir, tmp_path, product_name, p
             .format(format=product_format, scene_id=scene_id)
         return None
 
-    if product_format == 'Level-1 GeoTIFF Data Product':
-        if check_archive_fast(filename):
-            scene['downloaded'] = True
-            print 'File "{file_name}" is checked successfully'.format(file_name=filename)
-            return filename
-        else:
-            print 'Downloaded file "{file_name}" is broken. The file will be removed.'.format(file_name=filename)
-            silent_remove(filename)
-            return None
-
+    if check_archive_fast(filename, product_format):
+         scene['downloaded'] = True
+         print 'File "{file_name}" is checked successfully'.format(file_name=filename)
+         return filename
+    else:
+         print 'Downloaded file "{file_name}" is broken. The file will be removed.'.format(file_name=filename)
+         silent_remove(filename)
+         return None 
 
 def get_scenes(login, password, identifiers, product_name):
     product_id = str(downloader_config.PRODUCTS[product_name]['id'])
